@@ -43,7 +43,7 @@ namespace GammaDebug.Algorithm
         private double[] _normalizationFactors; // 归一化因子
         private double[] _weights; // 权重矩阵
         private double _learningRate = 1.0; // 学习率
-        private double _maxStepSize = 100.0; // 最大步长
+        private double _maxStepSize = 200.0; // 最大步长
         private double _firstStepMaxSize = 1000.0; // 第一步雅可比的最大步长
         private double _minJacobianDelta = 1.0; // 最小扰动量
         private double _maxJacobianDelta = 25.0; // 最大扰动量
