@@ -914,7 +914,7 @@ namespace GammaDebug.Algorithm
                 
                 // 简洁记录步长信息
                 double finalStepNorm = Math.Sqrt(deltaRgb[0] * deltaRgb[0] + deltaRgb[1] * deltaRgb[1] + deltaRgb[2] * deltaRgb[2]);
-                Log.Trace($"步长计算: 模长={finalStepNorm:F1} 限制={effectiveMaxStepSize:F0} 缩放={finalStepNorm > effectiveMaxStepSize}");
+                Log.Trace($"步长计算: 模长={stepNorm:F1} 限制={effectiveMaxStepSize:F0} 缩放={stepNorm > effectiveMaxStepSize}");
                 
                 return deltaRgb;
             }
