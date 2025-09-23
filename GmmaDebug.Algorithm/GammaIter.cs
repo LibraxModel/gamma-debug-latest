@@ -61,9 +61,15 @@ namespace GammaDebug.Algorithm
         
         // 动态范围收缩逻辑
         private double[] _originalTarget; // 原始目标值
-        private double[] _originalTolerances; // 原始容差
+        private double[] _originalTolerances; // 原始容差（对称）
+        private double[] _originalLowerTolerances; // 原始下容差（非对称）
+        private double[] _originalUpperTolerances; // 原始上容差（非对称）
         private double[] _shrunkTarget; // 收缩后的目标值
-        private double[] _shrunkTolerances; // 收缩后的容差
+        private double[] _shrunkTolerances; // 收缩后的容差（对称）
+        private double[] _shrunkLowerTolerances; // 收缩后的下容差（非对称）
+        private double[] _shrunkUpperTolerances; // 收缩后的上容差（非对称）
+        private double[] _lowerTolerances; // 当前下容差（非对称）
+        private double[] _upperTolerances; // 当前上容差（非对称）
         private bool _hasReachedOriginalRange = false; // 是否已达到原始范围
         private GrayInfo _originalRangeRgb = null; // 达到原始范围时的RGB
         private double[] _originalRangeXylv = null; // 达到原始范围时的xyLv
@@ -134,31 +140,36 @@ namespace GammaDebug.Algorithm
             Log.Trace("高斯牛顿法参数初始化完成");
         }
 
+
         /// <summary>
-        /// 设置目标值和容差 - 供外部调用
+        /// 设置目标值和容差 - 供外部调用（非对称容差）
         /// </summary>
-        internal void SetTargetAndTolerances(double[] target, double[] tolerances)
+        internal void SetTargetAndTolerances(double[] target, double[] lowerTolerances, double[] upperTolerances, GammaBundle bundle = null)
         {
-            if (target == null || tolerances == null)
+            if (target == null || lowerTolerances == null || upperTolerances == null)
                 throw new ArgumentNullException("目标值和容差不能为null");
-            if (target.Length != 3 || tolerances.Length != 3)
+            if (target.Length != 3 || lowerTolerances.Length != 3 || upperTolerances.Length != 3)
                 throw new ArgumentException("目标值和容差数组长度必须为3");
             
             // 保存原始目标值和容差
             _originalTarget = (double[])target.Clone();
-            _originalTolerances = (double[])tolerances.Clone();
+            _originalLowerTolerances = (double[])lowerTolerances.Clone();
+            _originalUpperTolerances = (double[])upperTolerances.Clone();
             
-            // 计算收缩后的目标值和容差（只有X和Y的容差缩小到3/4，Lv保持不变）
+            // 计算收缩后的目标值和容差（所有容差都缩小到3/4）
             _shrunkTarget = (double[])target.Clone();
-            _shrunkTolerances = new double[3];
+            _shrunkLowerTolerances = new double[3];
+            _shrunkUpperTolerances = new double[3];
             for (int i = 0; i < 3; i++)
             {
-                _shrunkTolerances[i] = tolerances[i] * 0.75; // 缩小到3/4
+                _shrunkLowerTolerances[i] = lowerTolerances[i] * 0.75; // 缩小到3/4
+                _shrunkUpperTolerances[i] = upperTolerances[i] * 0.75; // 缩小到3/4
             }
             
             // 初始使用收缩后的目标值和容差
             _target = (double[])_shrunkTarget.Clone();
-            _tolerances = (double[])_shrunkTolerances.Clone();
+            _lowerTolerances = (double[])_shrunkLowerTolerances.Clone();
+            _upperTolerances = (double[])_shrunkUpperTolerances.Clone();
             
             // 重置动态范围收缩状态
             _hasReachedOriginalRange = false;
@@ -172,14 +183,24 @@ namespace GammaDebug.Algorithm
             {
                 _normalizationFactors[i] = Math.Abs(_target[i]) < 1e-6 ? 1.0 : Math.Abs(_target[i]);
             }   
-            // 计算并输出原始目标范围
-            double[] originalRangeMin = { _originalTarget[0] - _originalTolerances[0], _originalTarget[1] - _originalTolerances[1], _originalTarget[2] - _originalTolerances[2] };
-            double[] originalRangeMax = { _originalTarget[0] + _originalTolerances[0], _originalTarget[1] + _originalTolerances[1], _originalTarget[2] + _originalTolerances[2] };
-            Log.Trace($"  原始目标范围: X[{originalRangeMin[0]:F3},{originalRangeMax[0]:F3}] Y[{originalRangeMin[1]:F3},{originalRangeMax[1]:F3}] Lv[{originalRangeMin[2]:F1},{originalRangeMax[2]:F1}]");
+            
+            // 输出原始目标范围
+            if (bundle != null)
+            {
+                // 直接从bundle中获取原始目标范围
+                Log.Trace($"  原始目标范围: X[{bundle.XRange.Item1:F3},{bundle.XRange.Item2:F3}] Y[{bundle.YRange.Item1:F3},{bundle.YRange.Item2:F3}] Lv[{bundle.LvRange.Item1:F1},{bundle.LvRange.Item2:F1}]");
+            }
+            else
+            {
+                // 从非对称容差推导范围
+                double[] originalRangeMin = { _originalTarget[0] - _originalLowerTolerances[0], _originalTarget[1] - _originalLowerTolerances[1], _originalTarget[2] - _originalLowerTolerances[2] };
+                double[] originalRangeMax = { _originalTarget[0] + _originalUpperTolerances[0], _originalTarget[1] + _originalUpperTolerances[1], _originalTarget[2] + _originalUpperTolerances[2] };
+                Log.Trace($"  原始目标范围: X[{originalRangeMin[0]:F3},{originalRangeMax[0]:F3}] Y[{originalRangeMin[1]:F3},{originalRangeMax[1]:F3}] Lv[{originalRangeMin[2]:F1},{originalRangeMax[2]:F1}]");
+            }
             
             // 计算并输出缩放后的目标范围
-            double[] shrunkRangeMin = { _target[0] - _tolerances[0], _target[1] - _tolerances[1], _target[2] - _tolerances[2] };
-            double[] shrunkRangeMax = { _target[0] + _tolerances[0], _target[1] + _tolerances[1], _target[2] + _tolerances[2] };
+            double[] shrunkRangeMin = { _target[0] - _lowerTolerances[0], _target[1] - _lowerTolerances[1], _target[2] - _lowerTolerances[2] };
+            double[] shrunkRangeMax = { _target[0] + _upperTolerances[0], _target[1] + _upperTolerances[1], _target[2] + _upperTolerances[2] };
             Log.Trace($"  缩放目标范围: X[{shrunkRangeMin[0]:F3},{shrunkRangeMax[0]:F3}] Y[{shrunkRangeMin[1]:F3},{shrunkRangeMax[1]:F3}] Lv[{shrunkRangeMin[2]:F1},{shrunkRangeMax[2]:F1}]");
         }
 
@@ -194,13 +215,66 @@ namespace GammaDebug.Algorithm
         }
 
         /// <summary>
-        /// 获取当前容差
+        /// 获取当前容差（返回对称容差，取上下容差的平均值）
         /// </summary>
         internal double[] GetTolerances()
         {
-            if (_tolerances == null)
+            if (_lowerTolerances == null || _upperTolerances == null)
                 return null;
-            return (double[])_tolerances.Clone();
+            
+            double[] symmetricTolerances = new double[3];
+            for (int i = 0; i < 3; i++)
+            {
+                symmetricTolerances[i] = (_lowerTolerances[i] + _upperTolerances[i]) / 2.0;
+            }
+            return symmetricTolerances;
+        }
+
+        /// <summary>
+        /// 获取当前非对称容差
+        /// </summary>
+        internal (double[], double[]) GetAsymmetricTolerances()
+        {
+            if (_lowerTolerances == null || _upperTolerances == null)
+                return (null, null);
+            
+            return ((double[])_lowerTolerances.Clone(), (double[])_upperTolerances.Clone());
+        }
+
+        /// <summary>
+        /// 获取当前目标范围
+        /// </summary>
+        internal (double[], double[]) GetTargetRange()
+        {
+            if (_target == null || _lowerTolerances == null || _upperTolerances == null)
+                return (null, null);
+            
+            double[] minRange = new double[3];
+            double[] maxRange = new double[3];
+            for (int i = 0; i < 3; i++)
+            {
+                minRange[i] = _target[i] - _lowerTolerances[i];
+                maxRange[i] = _target[i] + _upperTolerances[i];
+            }
+            return (minRange, maxRange);
+        }
+
+        /// <summary>
+        /// 获取原始目标范围
+        /// </summary>
+        internal (double[], double[]) GetOriginalTargetRange()
+        {
+            if (_originalTarget == null || _originalLowerTolerances == null || _originalUpperTolerances == null)
+                return (null, null);
+            
+            double[] minRange = new double[3];
+            double[] maxRange = new double[3];
+            for (int i = 0; i < 3; i++)
+            {
+                minRange[i] = _originalTarget[i] - _originalLowerTolerances[i];
+                maxRange[i] = _originalTarget[i] + _originalUpperTolerances[i];
+            }
+            return (minRange, maxRange);
         }
 
         /// <summary>
@@ -214,23 +288,31 @@ namespace GammaDebug.Algorithm
             // 使用bundle.Dest作为目标Lv，这是通过GammaServices.GetLv(_param.GammaBasic, _param.Gray)计算出的确定值
             double targetLv = bundle.Dest;
             
-            // 计算容差（范围半宽）
-            double toleranceX = (bundle.XRange.Item2 - bundle.XRange.Item1) / 2;
-            double toleranceY = (bundle.YRange.Item2 - bundle.YRange.Item1) / 2;
-            double toleranceLv = (bundle.LvRange.Item2 - bundle.LvRange.Item1) / 2;
+            // 计算非对称容差
+            double lowerToleranceX = targetX - bundle.XRange.Item1;
+            double upperToleranceX = bundle.XRange.Item2 - targetX;
+            double lowerToleranceY = targetY - bundle.YRange.Item1;
+            double upperToleranceY = bundle.YRange.Item2 - targetY;
+            double lowerToleranceLv = targetLv - bundle.LvRange.Item1;
+            double upperToleranceLv = bundle.LvRange.Item2 - targetLv;
             
             // 确保容差不为零，设置最小容差
-            toleranceX = Math.Max(toleranceX, 0.001); // 最小X容差
-            toleranceY = Math.Max(toleranceY, 0.001); // 最小Y容差
-            toleranceLv = Math.Max(toleranceLv, 0.1);  // 最小Lv容差
+            lowerToleranceX = Math.Max(lowerToleranceX, 0.001); // 最小X下容差
+            upperToleranceX = Math.Max(upperToleranceX, 0.001); // 最小X上容差
+            lowerToleranceY = Math.Max(lowerToleranceY, 0.001); // 最小Y下容差
+            upperToleranceY = Math.Max(upperToleranceY, 0.001); // 最小Y上容差
+            lowerToleranceLv = Math.Max(lowerToleranceLv, 0.1);  // 最小Lv下容差
+            upperToleranceLv = Math.Max(upperToleranceLv, 0.1);  // 最小Lv上容差
             
             double[] target = { targetX, targetY, targetLv };
-            double[] tolerances = { toleranceX, toleranceY, toleranceLv };
+            double[] lowerTolerances = { lowerToleranceX, lowerToleranceY, lowerToleranceLv };
+            double[] upperTolerances = { upperToleranceX, upperToleranceY, upperToleranceLv };
             
-            SetTargetAndTolerances(target, tolerances);
+            SetTargetAndTolerances(target, lowerTolerances, upperTolerances, bundle);
             
             Log.Trace($"设置目标值: X={targetX:F3}, Y={targetY:F3}, Lv={targetLv:F3}");
-            Log.Trace($"容差设置: X={toleranceX:F3}, Y={toleranceY:F3}, Lv={toleranceLv:F3}");
+            Log.Trace($"非对称容差设置: X下={lowerToleranceX:F3}, X上={upperToleranceX:F3}, Y下={lowerToleranceY:F3}, Y上={upperToleranceY:F3}, Lv下={lowerToleranceLv:F3}, Lv上={upperToleranceLv:F3}");
+            Log.Trace($"Lv容差验证: 目标Lv={targetLv:F3}, 范围=[{bundle.LvRange.Item1:F3},{bundle.LvRange.Item2:F3}], 下容差={lowerToleranceLv:F3}, 上容差={upperToleranceLv:F3}");
         }
 
         /// <summary>
@@ -294,7 +376,7 @@ namespace GammaDebug.Algorithm
                     else
                     {
                     Log.Trace($"使用固定步长法进行优化 (当前Lv={lv:F1},x={x:F3},y={y:F3})");
-                    return ApplyFixedStep(currentRgb, _lowLvStep);
+                    return ApplyFixedStep(currentRgb, _lowLvStep, currentXylv, bundle);
                 }
             }
         }
@@ -313,11 +395,11 @@ namespace GammaDebug.Algorithm
             double[] rawError = ComputeError(currentXylv);
             Log.Trace($"  原始误差: [x={rawError[0]:F5}, y={rawError[1]:F5}, Lv={rawError[2]:F3}]");
             
-            // 检查是否在原始范围内，如果是则记录当前点
+            // 检查是否在原始范围内，如果是则记录当前点（非对称容差）
             bool inOriginalRange = true;
             for (int i = 0; i < 3; i++)
             {
-                if (Math.Abs(rawError[i]) > _originalTolerances[i])
+                if (rawError[i] < -_originalLowerTolerances[i] || rawError[i] > _originalUpperTolerances[i])
                 {
                     inOriginalRange = false;
                     break;
@@ -401,9 +483,9 @@ namespace GammaDebug.Algorithm
             }
             
             // 更新bundle的RGB值
-            bundle.GrayInfo.R = (int)perturbedRgb[0];
-            bundle.GrayInfo.G = (int)perturbedRgb[1];
-            bundle.GrayInfo.B = (int)perturbedRgb[2];
+            bundle.GrayInfo.R = (int)Math.Round(perturbedRgb[0]);
+            bundle.GrayInfo.G = (int)Math.Round(perturbedRgb[1]);
+            bundle.GrayInfo.B = (int)Math.Round(perturbedRgb[2]);
             
             string componentName = componentIndex == 0 ? "R" : (componentIndex == 1 ? "G" : "B");
             string direction = perturbationDirection > 0 ? "+" : "-";
@@ -569,9 +651,9 @@ namespace GammaDebug.Algorithm
             }
             
             // 更新bundle
-            bundle.GrayInfo.R = (int)newRgb[0];
-            bundle.GrayInfo.G = (int)newRgb[1];
-            bundle.GrayInfo.B = (int)newRgb[2];
+            bundle.GrayInfo.R = (int)Math.Round(newRgb[0]);
+            bundle.GrayInfo.G = (int)Math.Round(newRgb[1]);
+            bundle.GrayInfo.B = (int)Math.Round(newRgb[2]);
             
             Console.WriteLine($" 高斯牛顿步完成: [{newRgb[0]:F1}, {newRgb[1]:F1}, {newRgb[2]:F1}] (基于基准RGB: [{_jacobianBaseRgb[0]:F1}, {_jacobianBaseRgb[1]:F1}, {_jacobianBaseRgb[2]:F1}])");
             
@@ -635,25 +717,25 @@ namespace GammaDebug.Algorithm
         /// </summary>
         private bool CheckConvergence(double[] rawError)
         {
-            if (_tolerances == null)
+            if (_lowerTolerances == null || _upperTolerances == null)
                 throw new InvalidOperationException("容差未设置，请先调用SetTargetAndTolerances或SetTargetFromBundle");
             
-            // 检查是否在收缩范围内收敛
+            // 检查是否在收缩范围内收敛（非对称容差）
             bool inShrunkRange = true;
             for (int i = 0; i < 3; i++)
             {
-                if (Math.Abs(rawError[i]) > _tolerances[i])
+                if (rawError[i] < -_lowerTolerances[i] || rawError[i] > _upperTolerances[i])
                 {
                     inShrunkRange = false;
                     break;
                 }
             }
             
-            // 检查是否在原始范围内
+            // 检查是否在原始范围内（非对称容差）
             bool inOriginalRange = true;
             for (int i = 0; i < 3; i++)
             {
-                if (Math.Abs(rawError[i]) > _originalTolerances[i])
+                if (rawError[i] < -_originalLowerTolerances[i] || rawError[i] > _originalUpperTolerances[i])
                 {
                     inOriginalRange = false;
                     break;
@@ -764,7 +846,7 @@ namespace GammaDebug.Algorithm
         /// </summary>
         internal bool IsTargetAndTolerancesSet()
         {
-            return _target != null && _tolerances != null && _normalizationFactors != null;
+            return _target != null && _lowerTolerances != null && _upperTolerances != null && _normalizationFactors != null;
         }
 
         /// <summary>
@@ -799,13 +881,20 @@ namespace GammaDebug.Algorithm
             // 检查低亮度情况
             if (currentXylv[2] < _lowLvThreshold)
             {
-                Log.Trace($" Lv值({currentXylv[2]:f3}) < {_lowLvThreshold}，使用固定步长");
-                double[] newRgb = new double[3];
+                Log.Trace($" Lv值({currentXylv[2]:f3}) < {_lowLvThreshold}，先使用固定步长调整RGB作为高斯牛顿起始点");
+                
+                // 使用固定步长调整RGB
+                double[] fixedStepRgb = new double[3];
                 for (int i = 0; i < 3; i++)
                 {
-                    newRgb[i] = Math.Max(0, Math.Min(_max_RGB, currentRgb[i] + _lowLvStep[i]));
+                    fixedStepRgb[i] = Math.Max(0, Math.Min(_max_RGB, currentRgb[i] + _lowLvStep[i]));
                 }
-                return newRgb;
+                
+                Log.Trace($" 固定步长调整后RGB: [{fixedStepRgb[0]:F0},{fixedStepRgb[1]:F0},{fixedStepRgb[2]:F0}]");
+                Log.Trace($" 将固定步长调整后的RGB作为高斯牛顿算法的起始点");
+                
+                // 返回固定步长调整后的RGB，作为高斯牛顿的起始点
+                return fixedStepRgb;
             }
 
             Console.WriteLine($" Lv值({currentXylv[2]:f3}) >= {_lowLvThreshold}，使用雅可比矩阵状态机");
@@ -818,15 +907,54 @@ namespace GammaDebug.Algorithm
         /// <summary>
         /// 应用固定步长
         /// </summary>
-        private IterFdRst ApplyFixedStep(double[] currentRgb, double[] step)
+        private IterFdRst ApplyFixedStep(double[] currentRgb, double[] step, double[] currentXylv, GammaBundle bundle)
         {
+            // 计算目标值（从bundle获取）
+            double targetLv = bundle.Dest;
+            
+            // 根据Lv误差决定步长方向
+            double lvError = targetLv - currentXylv[2];
+            double stepDirection = Math.Sign(lvError);
+            
+            // 如果误差很小，使用默认方向
+            if (Math.Abs(lvError) < 0.1)
+            {
+                stepDirection = 1; // 默认增加RGB
+            }
+            
+            // 计算新RGB值，使用智能步长
             double[] newRgb = new double[3];
             for (int i = 0; i < 3; i++)
             {
-                newRgb[i] = currentRgb[i] + step[i];
+                // 使用带方向的步长
+                double actualStep = stepDirection * step[i];
+                newRgb[i] = currentRgb[i] + actualStep;
                 newRgb[i] = Math.Max(0, Math.Min(_max_RGB, newRgb[i]));
             }
-            GrayInfo gi = new GrayInfo(_gray, (int)Math.Round(newRgb[0]), (int)Math.Round(newRgb[1]), (int)Math.Round(newRgb[2]));
+            
+            // 格式化RGB值
+            int formatR = FormatRGB(newRgb[0]);
+            int formatG = FormatRGB(newRgb[1]);
+            int formatB = FormatRGB(newRgb[2]);
+            
+            Log.Trace($"固定步长计算: 目标Lv={targetLv:F3}, 当前Lv={currentXylv[2]:F3}, 误差={lvError:F3}, 方向={stepDirection}");
+            Log.Trace($"步长设置: [{step[0]},{step[1]},{step[2]}]");
+            Log.Trace($"实际步长: [{stepDirection * step[0]:F1},{stepDirection * step[1]:F1},{stepDirection * step[2]:F1}]");
+            Log.Trace($"计算得RGB：{newRgb[0]:F1},{newRgb[1]:F1},{newRgb[2]:F1}");
+            Log.Trace($"格式化得RGB：{formatR},{formatG},{formatB}");
+            
+            // 计算步长变化
+            double[] stepChange = { newRgb[0] - currentRgb[0], newRgb[1] - currentRgb[1], newRgb[2] - currentRgb[2] };
+            
+            // 输出总结数据
+            string logInfo = $"总结数据：[{_iterTimes,4}][{_lastDebugType}=>Lv],[{_lastLv}=>低亮度],得：Step:{stepChange[1]:F1},RGB:[{currentRgb[0]:F0},{currentRgb[1]:F0},{currentRgb[2]:F0}]=>[{formatR},{formatG},{formatB}]";
+            Log.Trace(logInfo);
+            
+            // 更新状态
+            _lastLvGrayInfo = new GrayInfo(_gray, formatR, formatG, formatB);
+            _lastDebugType = DebugType.Lv;
+            
+            GrayInfo gi = new GrayInfo(_gray, formatR, formatG, formatB);
             return new IterFdRst(IterRstType_enum.Continue_Lv, gi);
         }
 
@@ -1123,7 +1251,7 @@ namespace GammaDebug.Algorithm
             {
                 return _max_RGB;
             }
-            return Convert.ToInt32(v);
+            return (int)Math.Round(v);
         }
 
         public void InitStepXY()
