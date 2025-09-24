@@ -15,27 +15,19 @@ namespace GammaDebug.Algorithm
         // ========== 原有接口保持不变的字段 ==========
         private int _gray = 0;
         double _lastLv = 0;
-        double _lastDeltaG = 0;
-        double _lastDirX = 0;
-        double _lastDirY = 0;
         double _stepX = 0;
         double _stepY = 0;
         int _iterTimes = 0;
-        double _percent = 0;
         GammaMode_enum _mode;
         const int MAX_IterTimes = 500;
-        const int USER_STEP_LV = 10;
         int USER_STEP_X;
         int USER_STEP_Y;
-        const int Max_STEP = 40;
         int _max_RGB = 1023;
         AlgoParam _param;
         DebugType _lastDebugType;
-        double _lastRatioLv = 0.1;
         GrayInfo _lastLvGrayInfo = null;
         List<double> _lastStepRecordList;
         int _roundIterTimesMax;
-        bool isCheckXY = false;
 
         // ========== 高斯牛顿法新增字段 ==========
         private double[] _target; // 目标xyLv值 [x, y, Lv]
@@ -43,14 +35,14 @@ namespace GammaDebug.Algorithm
         private double[] _normalizationFactors; // 归一化因子
         private double[] _weights; // 权重矩阵
         private double _learningRate = 1.0; // 学习率
-        private double _maxStepSize = 200.0; // 最大步长
+        private double _maxStepSize = 40; // 最大步长
         private double _firstStepMaxSize = 1000.0; // 第一步雅可比的最大步长
         private double _minJacobianDelta = 1.0; // 最小扰动量
         private double _maxJacobianDelta = 25.0; // 最大扰动量
-        private double _deltaAdaptiveFactor = 0.1; // 自适应因子
+        private double _deltaAdaptiveFactor = 0.2; // 自适应因子
         private bool _normalizeErrors = true; // 是否使用偏差率归一化
-        private double _lowLvThreshold = 2.0; // 低亮度阈值
-        private double[] _lowLvStep = { 40, 40, 40 }; // 低亮度固定步长
+        private double _lowLvThreshold = 0; // 低亮度阈值，降低以避免过度触发
+        private double[] _lowLvStep = { 20, 20, 20 }; // 低亮度固定步长，减小步长避免过度调整
         
         // 缓存和收敛检测
         private Dictionary<string, (double[], double)> _experimentCache; // 实验缓存
@@ -103,16 +95,13 @@ namespace GammaDebug.Algorithm
             _gray = param.Gray;
             _lastLv = 0;
             _lastDebugType = DebugType.Init;
-            _lastDirX = _lastDirY = 0;
             _stepX = USER_STEP_X;
             _stepY = USER_STEP_Y;
             _mode = config.Mode_Enum;
             _max_RGB = config.MaxRGB;
-            _lastDeltaG = 0;
             _param = param;
             _lastStepRecordList = new List<double>();
             _roundIterTimesMax = config.PGammaRoundTimesMax;
-            _percent = param.Percent;
 
             // ========== 高斯牛顿法初始化 ==========
             InitializeGaussNewtonParameters();
@@ -162,8 +151,8 @@ namespace GammaDebug.Algorithm
             _shrunkUpperTolerances = new double[3];
             for (int i = 0; i < 3; i++)
             {
-                _shrunkLowerTolerances[i] = lowerTolerances[i] * 0.75; // 缩小到3/4
-                _shrunkUpperTolerances[i] = upperTolerances[i] * 0.75; // 缩小到3/4
+                _shrunkLowerTolerances[i] = lowerTolerances[i] * 1; // 缩小到3/4
+                _shrunkUpperTolerances[i] = upperTolerances[i] * 1; // 缩小到3/4
             }
             
             // 初始使用收缩后的目标值和容差
@@ -288,7 +277,7 @@ namespace GammaDebug.Algorithm
             // 使用bundle.Dest作为目标Lv，这是通过GammaServices.GetLv(_param.GammaBasic, _param.Gray)计算出的确定值
             double targetLv = bundle.Dest;
             
-            // 计算非对称容差
+            // 计算非对称容差，确保容差推导的范围完全等于bundle的范围
             double lowerToleranceX = targetX - bundle.XRange.Item1;
             double upperToleranceX = bundle.XRange.Item2 - targetX;
             double lowerToleranceY = targetY - bundle.YRange.Item1;
@@ -296,13 +285,14 @@ namespace GammaDebug.Algorithm
             double lowerToleranceLv = targetLv - bundle.LvRange.Item1;
             double upperToleranceLv = bundle.LvRange.Item2 - targetLv;
             
-            // 确保容差不为零，设置最小容差
-            lowerToleranceX = Math.Max(lowerToleranceX, 0.001); // 最小X下容差
-            upperToleranceX = Math.Max(upperToleranceX, 0.001); // 最小X上容差
-            lowerToleranceY = Math.Max(lowerToleranceY, 0.001); // 最小Y下容差
-            upperToleranceY = Math.Max(upperToleranceY, 0.001); // 最小Y上容差
-            lowerToleranceLv = Math.Max(lowerToleranceLv, 0.1);  // 最小Lv下容差
-            upperToleranceLv = Math.Max(upperToleranceLv, 0.1);  // 最小Lv上容差
+            // 确保容差不为零，但不要改变容差推导的范围
+            // 只有当计算出的容差为0或负数时，才设置最小容差
+            if (lowerToleranceX <= 0) lowerToleranceX = 0.001;
+            if (upperToleranceX <= 0) upperToleranceX = 0.001;
+            if (lowerToleranceY <= 0) lowerToleranceY = 0.001;
+            if (upperToleranceY <= 0) upperToleranceY = 0.001;
+            if (lowerToleranceLv <= 0) lowerToleranceLv = 0.1;
+            if (upperToleranceLv <= 0) upperToleranceLv = 0.1;
             
             double[] target = { targetX, targetY, targetLv };
             double[] lowerTolerances = { lowerToleranceX, lowerToleranceY, lowerToleranceLv };
@@ -376,7 +366,14 @@ namespace GammaDebug.Algorithm
                     else
                     {
                     Log.Trace($"使用固定步长法进行优化 (当前Lv={lv:F1},x={x:F3},y={y:F3})");
-                    return ApplyFixedStep(currentRgb, _lowLvStep, currentXylv, bundle);
+                    IterFdRst result = ApplyFixedStep(currentRgb, _lowLvStep, currentXylv, bundle);
+                    
+                    // 更新bundle中的RGB值，确保下一次迭代使用新的RGB值
+                    bundle.GrayInfo.R = result.GrayInfo.R;
+                    bundle.GrayInfo.G = result.GrayInfo.G;
+                    bundle.GrayInfo.B = result.GrayInfo.B;
+                    
+                    return result;
                 }
             }
         }
@@ -386,8 +383,11 @@ namespace GammaDebug.Algorithm
         /// </summary>
         private IterFdRst StartGaussNewtonOptimization(GammaBundle bundle, double[] currentRgb, double[] currentXylv)
         {
-            // 设置目标值和容差（从bundle获取）
-            SetTargetFromBundle(bundle);
+            // 只在第一次或目标值未设置时才设置目标值和容差
+            if (!IsTargetAndTolerancesSet())
+            {
+                SetTargetFromBundle(bundle);
+            }
             
             Log.Trace($"第{_iterTimes}次迭代: 当前RGB[{currentRgb[0]:F0},{currentRgb[1]:F0},{currentRgb[2]:F0}] 当前xylv测量值[{currentXylv[0]:F3},{currentXylv[1]:F3},{currentXylv[2]:F3}]");
             
@@ -873,36 +873,6 @@ namespace GammaDebug.Algorithm
             Log.Trace("算法状态已重置");
         }
 
-        /// <summary>
-        /// 使用高斯牛顿法计算新的RGB值
-        /// </summary>
-        private double[] ComputeNewRgbByGaussNewton(double[] currentRgb, double[] currentXylv, double[] rawError)
-        {
-            // 检查低亮度情况
-            if (currentXylv[2] < _lowLvThreshold)
-            {
-                Log.Trace($" Lv值({currentXylv[2]:f3}) < {_lowLvThreshold}，先使用固定步长调整RGB作为高斯牛顿起始点");
-                
-                // 使用固定步长调整RGB
-                double[] fixedStepRgb = new double[3];
-                for (int i = 0; i < 3; i++)
-                {
-                    fixedStepRgb[i] = Math.Max(0, Math.Min(_max_RGB, currentRgb[i] + _lowLvStep[i]));
-                }
-                
-                Log.Trace($" 固定步长调整后RGB: [{fixedStepRgb[0]:F0},{fixedStepRgb[1]:F0},{fixedStepRgb[2]:F0}]");
-                Log.Trace($" 将固定步长调整后的RGB作为高斯牛顿算法的起始点");
-                
-                // 返回固定步长调整后的RGB，作为高斯牛顿的起始点
-                return fixedStepRgb;
-            }
-
-            Console.WriteLine($" Lv值({currentXylv[2]:f3}) >= {_lowLvThreshold}，使用雅可比矩阵状态机");
-
-            // 统一通过状态机进行雅可比与步长计算
-            // 这里只返回占位：不改变当前RGB，由状态机在后续迭代返回扰动或GN步
-            return new double[] { currentRgb[0], currentRgb[1], currentRgb[2] };
-        }
 
         /// <summary>
         /// 应用固定步长
