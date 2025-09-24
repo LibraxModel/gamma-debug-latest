@@ -14,31 +14,23 @@ namespace GammaDebug.Algorithm
     {
         // ========== 原有接口保持不变的字段 ==========
         private int _gray = 0;
-        double _lastLv = 0;
-        double _stepX = 0;
-        double _stepY = 0;
         int _iterTimes = 0;
         GammaMode_enum _mode;
         const int MAX_IterTimes = 500;
-        int USER_STEP_X;
-        int USER_STEP_Y;
         int _max_RGB = 1023;
         AlgoParam _param;
         DebugType _lastDebugType;
         GrayInfo _lastLvGrayInfo = null;
-        List<double> _lastStepRecordList;
-        int _roundIterTimesMax;
 
         // ========== 高斯牛顿法新增字段 ==========
         private double[] _target; // 目标xyLv值 [x, y, Lv]
-        private double[] _tolerances; // 容差 [tolerance_x, tolerance_y, tolerance_Lv]
         private double[] _normalizationFactors; // 归一化因子
         private double[] _weights; // 权重矩阵
         private double _learningRate = 1.0; // 学习率
         private double _maxStepSize = 40; // 最大步长
         private double _firstStepMaxSize = 1000.0; // 第一步雅可比的最大步长
         private double _minJacobianDelta = 1.0; // 最小扰动量
-        private double _maxJacobianDelta = 25.0; // 最大扰动量
+        private double _maxJacobianDelta = 40.0; // 最大扰动量
         private double _deltaAdaptiveFactor = 0.2; // 自适应因子
         private bool _normalizeErrors = true; // 是否使用偏差率归一化
         private double _lowLvThreshold = 0; // 低亮度阈值，降低以避免过度触发
@@ -57,7 +49,6 @@ namespace GammaDebug.Algorithm
         private double[] _originalLowerTolerances; // 原始下容差（非对称）
         private double[] _originalUpperTolerances; // 原始上容差（非对称）
         private double[] _shrunkTarget; // 收缩后的目标值
-        private double[] _shrunkTolerances; // 收缩后的容差（对称）
         private double[] _shrunkLowerTolerances; // 收缩后的下容差（非对称）
         private double[] _shrunkUpperTolerances; // 收缩后的上容差（非对称）
         private double[] _lowerTolerances; // 当前下容差（非对称）
@@ -90,18 +81,11 @@ namespace GammaDebug.Algorithm
         internal GammaIter(AlgoParam param, GammaConfigParam config)
         {
             // ========== 保持原有初始化逻辑 ==========
-            USER_STEP_X = param.StepX;
-            USER_STEP_Y = param.StepY;
             _gray = param.Gray;
-            _lastLv = 0;
             _lastDebugType = DebugType.Init;
-            _stepX = USER_STEP_X;
-            _stepY = USER_STEP_Y;
             _mode = config.Mode_Enum;
             _max_RGB = config.MaxRGB;
             _param = param;
-            _lastStepRecordList = new List<double>();
-            _roundIterTimesMax = config.PGammaRoundTimesMax;
 
             // ========== 高斯牛顿法初始化 ==========
             InitializeGaussNewtonParameters();
@@ -117,7 +101,6 @@ namespace GammaDebug.Algorithm
             
             // 不设置默认目标值和容差，等待从GammaBundle中获取
             _target = null; // 未初始化状态
-            _tolerances = null; // 未初始化状态
             _normalizationFactors = null; // 未初始化状态
             
             // 初始化权重（等权重）
@@ -151,8 +134,8 @@ namespace GammaDebug.Algorithm
             _shrunkUpperTolerances = new double[3];
             for (int i = 0; i < 3; i++)
             {
-                _shrunkLowerTolerances[i] = lowerTolerances[i] * 1; // 缩小到3/4
-                _shrunkUpperTolerances[i] = upperTolerances[i] * 1; // 缩小到3/4
+                _shrunkLowerTolerances[i] = lowerTolerances[i] * 0.75; // 缩小到3/4
+                _shrunkUpperTolerances[i] = upperTolerances[i] * 0.75; // 缩小到3/4
             }
             
             // 初始使用收缩后的目标值和容差
@@ -395,27 +378,15 @@ namespace GammaDebug.Algorithm
             double[] rawError = ComputeError(currentXylv);
             Log.Trace($"  原始误差: [x={rawError[0]:F5}, y={rawError[1]:F5}, Lv={rawError[2]:F3}]");
             
-            // 检查是否在原始范围内，如果是则记录当前点（非对称容差）
-            bool inOriginalRange = true;
-            for (int i = 0; i < 3; i++)
+            // 如果首次达到原始范围，记录当前点（在收敛检查之前）
+            if (_hasReachedOriginalRange && _originalRangeRgb == null)
             {
-                if (rawError[i] < -_originalLowerTolerances[i] || rawError[i] > _originalUpperTolerances[i])
-                {
-                    inOriginalRange = false;
-                    break;
-                }
-            }
-            
-            if (inOriginalRange && !_hasReachedOriginalRange)
-            {
-                _hasReachedOriginalRange = true;
-                _iterationsSinceOriginalRange = 0;
                 _originalRangeRgb = new GrayInfo(bundle.GrayInfo.Gray, bundle.GrayInfo.R, bundle.GrayInfo.G, bundle.GrayInfo.B);
                 _originalRangeXylv = (double[])currentXylv.Clone();
-                Log.Trace("🎯 首次达到原始范围！记录当前点作为备选结果");
+                Log.Trace("🎯 记录达到原始范围时的点作为备选结果");
             }
             
-            // 检查收敛
+            // 检查收敛（CheckConvergence会处理原始范围检查）
             if (CheckConvergence(rawError))
             {
                 Log.Trace($" 已收敛！误差满足容差要求");
@@ -715,7 +686,8 @@ namespace GammaDebug.Algorithm
         /// <summary>
         /// 检查是否收敛
         /// </summary>
-        private bool CheckConvergence(double[] rawError)
+        /// <returns>(是否收敛, 是否首次达到原始范围)</returns>
+        private (bool converged, bool firstTimeReachOriginal) CheckConvergence(double[] rawError)
         {
             if (_lowerTolerances == null || _upperTolerances == null)
                 throw new InvalidOperationException("容差未设置，请先调用SetTargetAndTolerances或SetTargetFromBundle");
@@ -742,16 +714,18 @@ namespace GammaDebug.Algorithm
                 }
             }
             
-            // 如果达到原始范围但之前没有记录，记录这个点
+            // 检查是否首次达到原始范围
+            bool firstTimeReachOriginal = false;
             if (inOriginalRange && !_hasReachedOriginalRange)
             {
                 _hasReachedOriginalRange = true;
                 _iterationsSinceOriginalRange = 0;
-                Log.Trace("🎯 首次达到原始范围！记录当前点作为备选结果");
+                firstTimeReachOriginal = true;
+                Log.Trace("🎯 首次达到原始范围！");
             }
             
-            // 如果达到原始范围，增加计数器
-            if (inOriginalRange)
+            // 如果已经达到过原始范围，增加总迭代计数器（不管当前是否在原始范围内）
+            if (_hasReachedOriginalRange)
             {
                 _iterationsSinceOriginalRange++;
             }
@@ -917,7 +891,7 @@ namespace GammaDebug.Algorithm
             double[] stepChange = { newRgb[0] - currentRgb[0], newRgb[1] - currentRgb[1], newRgb[2] - currentRgb[2] };
             
             // 输出总结数据
-            string logInfo = $"总结数据：[{_iterTimes,4}][{_lastDebugType}=>Lv],[{_lastLv}=>低亮度],得：Step:{stepChange[1]:F1},RGB:[{currentRgb[0]:F0},{currentRgb[1]:F0},{currentRgb[2]:F0}]=>[{formatR},{formatG},{formatB}]";
+            string logInfo = $"总结数据：[{_iterTimes,4}][{_lastDebugType}=>Lv],得：Step:{stepChange[1]:F1},RGB:[{currentRgb[0]:F0},{currentRgb[1]:F0},{currentRgb[2]:F0}]=>[{formatR},{formatG},{formatB}]";
             Log.Trace(logInfo);
             
             // 更新状态
@@ -1224,12 +1198,6 @@ namespace GammaDebug.Algorithm
             return (int)Math.Round(v);
         }
 
-        public void InitStepXY()
-        {
-            _stepX = USER_STEP_X;
-            _stepY = USER_STEP_Y;
-            Log.Trace($"_stepX:{_stepX},_stepY:{_stepY}");
-        }
 
         /// <summary>
         /// 上一次的调整内容
