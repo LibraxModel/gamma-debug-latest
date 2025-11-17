@@ -397,7 +397,7 @@ namespace GammaDebug.Algorithm
             }
             
             // 检查收敛（CheckConvergence会处理原始范围检查）
-            var (converged, firstTimeReachOriginal) = CheckConvergence(rawError);
+            var (converged, _) = CheckConvergence(rawError);
             if (converged)
             {
                 Log.Trace($" 已收敛！误差满足容差要求");
@@ -536,7 +536,7 @@ namespace GammaDebug.Algorithm
             
             // 重要：在雅可比计算过程中也要检查是否已经收敛
             double[] rawError = ComputeError(currentXylv);
-            var (converged, firstTimeReachOriginal) = CheckConvergence(rawError);
+            var (converged, _) = CheckConvergence(rawError);
             if (converged)
             {
                 Console.WriteLine($" 雅可比计算过程中已收敛！误差满足容差要求");
