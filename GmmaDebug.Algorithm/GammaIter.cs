@@ -17,8 +17,8 @@ namespace GammaDebug.Algorithm
         int _iterTimes = 0;
         GammaMode_enum _mode;
         const int MAX_IterTimes = 500;
-        int _max_RGB = 1023;
         AlgoParam _param;
+        GammaConfigParam _config;
         DebugType _lastDebugType;
         GrayInfo _lastLvGrayInfo = null;
 
@@ -27,14 +27,14 @@ namespace GammaDebug.Algorithm
         private double[] _normalizationFactors; // 归一化因子
         private double[] _weights; // 权重矩阵
         private double _learningRate = 1.0; // 学习率
-        private double _maxStepSize = 40; // 最大步长
-        private double _firstStepMaxSize = 1000.0; // 第一步雅可比的最大步长
-        private double _minJacobianDelta = 1.0; // 最小扰动量
-        private double _maxJacobianDelta = 40.0; // 最大扰动量
-        private double _deltaAdaptiveFactor = 0.2; // 自适应因子
+        private double _maxStepSize; // 最大步长（在InitializeGaussNewtonParameters中根据MaxRGB调整）
+        private double _firstStepMaxSize; // 第一步雅可比的最大步长（在InitializeGaussNewtonParameters中根据MaxRGB调整）
+        private double _minJacobianDelta; // 最小扰动量（在InitializeGaussNewtonParameters中根据MaxRGB调整）
+        private double _maxJacobianDelta; // 最大扰动量（在InitializeGaussNewtonParameters中根据MaxRGB调整）
+        private double _deltaAdaptiveFactor = 0.5; // 自适应因子
         private bool _normalizeErrors = true; // 是否使用偏差率归一化
         private double _lowLvThreshold = 0; // 低亮度阈值，降低以避免过度触发
-        private double[] _lowLvStep = { 20, 20, 20 }; // 低亮度固定步长，减小步长避免过度调整
+        private double[] _lowLvStep; // 低亮度固定步长（在InitializeGaussNewtonParameters中根据MaxRGB调整）
         
         // 缓存和收敛检测
         private Dictionary<string, (double[], double)> _experimentCache; // 实验缓存
@@ -84,8 +84,8 @@ namespace GammaDebug.Algorithm
             _gray = param.Gray;
             _lastDebugType = DebugType.Init;
             _mode = config.Mode_Enum;
-            _max_RGB = config.MaxRGB;
             _param = param;
+            _config = config;
 
             // ========== 高斯牛顿法初始化 ==========
             InitializeGaussNewtonParameters();
@@ -96,6 +96,16 @@ namespace GammaDebug.Algorithm
         /// </summary>
         private void InitializeGaussNewtonParameters()
         {
+            // 根据MaxRGB计算比例因子
+            double scaleFactor = (_config.MaxRGB + 1.0) / 1024.0;
+            
+            // 根据比例因子调整参数
+            _maxStepSize = 40.0 * scaleFactor;
+            _firstStepMaxSize = 1000.0 * scaleFactor / 2;
+            _minJacobianDelta = 1.0 ;
+            _maxJacobianDelta = 40.0 * scaleFactor ;
+            _lowLvStep = new double[] { 20.0 * scaleFactor, 20.0 * scaleFactor, 20.0 * scaleFactor };
+            
             // 初始化缓存
             _experimentCache = new Dictionary<string, (double[], double)>();
             
@@ -109,7 +119,7 @@ namespace GammaDebug.Algorithm
             // 清空历史记录
             ClearHistory();
             
-            Log.Trace("高斯牛顿法参数初始化完成");
+            Log.Trace($"高斯牛顿法参数初始化完成，MaxRGB={_config.MaxRGB}，比例因子={scaleFactor:F4}");
         }
 
 
@@ -450,7 +460,7 @@ namespace GammaDebug.Algorithm
             // 确保RGB值在有效范围内
             for (int i = 0; i < 3; i++)
             {
-                perturbedRgb[i] = Math.Max(0, Math.Min(1023, perturbedRgb[i]));
+                perturbedRgb[i] = Math.Max(0, Math.Min(_config.MaxRGB, perturbedRgb[i]));
             }
             
             // 更新bundle的RGB值
@@ -618,7 +628,7 @@ namespace GammaDebug.Algorithm
             for (int i = 0; i < 3; i++)
             {
                 newRgb[i] = _jacobianBaseRgb[i] + deltaRgb[i];
-                newRgb[i] = Math.Max(0, Math.Min(1023, newRgb[i]));
+                newRgb[i] = Math.Max(0, Math.Min(_config.MaxRGB, newRgb[i]));
             }
             
             // 更新bundle
@@ -873,7 +883,7 @@ namespace GammaDebug.Algorithm
                 // 使用带方向的步长
                 double actualStep = stepDirection * step[i];
                 newRgb[i] = currentRgb[i] + actualStep;
-                newRgb[i] = Math.Max(0, Math.Min(_max_RGB, newRgb[i]));
+                newRgb[i] = Math.Max(0, Math.Min(_config.MaxRGB, newRgb[i]));
             }
             
             // 格式化RGB值
@@ -1191,9 +1201,9 @@ namespace GammaDebug.Algorithm
             {
                 return 0;
             }
-            if (v > _max_RGB)
+            if (v > _config.MaxRGB)
             {
-                return _max_RGB;
+                return _config.MaxRGB;
             }
             return (int)Math.Round(v);
         }
