@@ -397,7 +397,8 @@ namespace GammaDebug.Algorithm
             }
             
             // 检查收敛（CheckConvergence会处理原始范围检查）
-            if (CheckConvergence(rawError))
+            var (converged, _) = CheckConvergence(rawError);
+            if (converged)
             {
                 Log.Trace($" 已收敛！误差满足容差要求");
                 
@@ -535,7 +536,8 @@ namespace GammaDebug.Algorithm
             
             // 重要：在雅可比计算过程中也要检查是否已经收敛
             double[] rawError = ComputeError(currentXylv);
-            if (CheckConvergence(rawError))
+            var (converged, _) = CheckConvergence(rawError);
+            if (converged)
             {
                 Console.WriteLine($" 雅可比计算过程中已收敛！误差满足容差要求");
                 _isComputingJacobian = false;
@@ -744,17 +746,17 @@ namespace GammaDebug.Algorithm
             if (inShrunkRange)
             {
                 Log.Trace("✅ 在收缩范围内收敛！");
-                return true;
+                return (true, firstTimeReachOriginal);
             }
             
             // 如果达到原始范围后超过10次迭代仍未在收缩范围内收敛，返回原始范围内的点
             if (_hasReachedOriginalRange && _iterationsSinceOriginalRange > MAX_ITERATIONS_AFTER_ORIGINAL)
             {
                 Log.Trace($"⚠️ 达到原始范围后{_iterationsSinceOriginalRange}次迭代仍未在收缩范围内收敛，返回原始范围内的点");
-                return true;
+                return (true, firstTimeReachOriginal);
             }
             
-            return false;
+            return (false, firstTimeReachOriginal);
         }
 
         /// <summary>
