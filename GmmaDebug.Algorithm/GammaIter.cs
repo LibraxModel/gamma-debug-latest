@@ -31,7 +31,7 @@ namespace GammaDebug.Algorithm
         private double _firstStepMaxSize; // 第一步雅可比的最大步长（在InitializeGaussNewtonParameters中根据MaxRGB调整）
         private double _minJacobianDelta; // 最小扰动量（在InitializeGaussNewtonParameters中根据MaxRGB调整）
         private double _maxJacobianDelta; // 最大扰动量（在InitializeGaussNewtonParameters中根据MaxRGB调整）
-        private double _deltaAdaptiveFactor = 0.5; // 自适应因子
+        private double _deltaAdaptiveFactor; // 自适应因子
         private bool _normalizeErrors = true; // 是否使用偏差率归一化
         private double _lowLvThreshold = 0; // 低亮度阈值，降低以避免过度触发
         private double[] _lowLvStep; // 低亮度固定步长（在InitializeGaussNewtonParameters中根据MaxRGB调整）
@@ -102,9 +102,10 @@ namespace GammaDebug.Algorithm
             // 根据比例因子调整参数
             _maxStepSize = 40.0 ;
             _firstStepMaxSize = 1000.0 ;
-            _minJacobianDelta = 1.0 ;
+            _minJacobianDelta = 1.0 * scaleFactor ;
             _maxJacobianDelta = 40.0  ;
             _lowLvStep = new double[] { 20.0,20.0, 20.0};
+            _deltaAdaptiveFactor = 0.5 * scaleFactor;
             
             // 初始化缓存
             _experimentCache = new Dictionary<string, (double[], double)>();

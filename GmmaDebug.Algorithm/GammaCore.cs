@@ -87,7 +87,7 @@ namespace GammaDebug.Algorithm
                 Log.Trace($"*--------{_bundle.Gray}灰阶调试完成，迭代{_iter.GetIterCount()}次--------*");
             }
             
-            // 获取目标xyLv值
+            // 获取目标xyLv值及范围
             double[] targetXylv = _iter.GetTarget();
             string targetStr;
             if (targetXylv != null && targetXylv.Length == 3)
@@ -98,9 +98,20 @@ namespace GammaDebug.Algorithm
             {
                 targetStr = "[未设置]";
             }
+
+            string targetRangeStr;
+            var (rangeMin, rangeMax) = _iter.GetTargetRange();
+            if (rangeMin != null && rangeMax != null && rangeMin.Length == 3 && rangeMax.Length == 3)
+            {
+                targetRangeStr = $"X[{rangeMin[0]:F3},{rangeMax[0]:F3}] Y[{rangeMin[1]:F3},{rangeMax[1]:F3}] Lv[{rangeMin[2]:F1},{rangeMax[2]:F1}]";
+            }
+            else
+            {
+                targetRangeStr = "未设置";
+            }
             
             // 使用保存的当前RGB值（用于本次测量的RGB），而不是r.GrayInfo（下一轮的RGB）
-            Log.Trace($"本轮RGB[{currentR},{currentG},{currentB}]，当前测量xyLv[{x:F3},{y:F3},{lv:F1}]，目标xyLv{targetStr}\n");
+            Log.Trace($"本轮RGB[{currentR},{currentG},{currentB}]，当前测量xyLv[{x:F3},{y:F3},{lv:F3}]，目标xyLv{targetStr}，目标范围{targetRangeStr}\n");
 
             return r;
             //_iterCount++;
