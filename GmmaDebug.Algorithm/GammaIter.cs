@@ -554,21 +554,21 @@ namespace GammaDebug.Algorithm
             for (int i = 0; i < 3; i++)
             {
                 double diff = Math.Abs(currentXylv[i] - _jacobianBaseXylv[i]);
-                Console.WriteLine($" 扰动检测：{GetXylvName(i)} 差值={diff:f6}");
+                Log.Trace($" 扰动检测：{GetXylvName(i)} 差值={diff:f6}");
                 // 如果有任何一个分量没有变化，就需要增大扰动
                 if (diff < 1e-6)
                 {
                     hasZeroChange = true;
-                    Console.WriteLine($" 扰动检测：{GetXylvName(i)} 分量无变化！");
+                    Log.Trace($"扰动检测：{GetXylvName(i)} 分量无变化！");
                 }
             }
             
             if (hasZeroChange)
             {
-                Console.WriteLine($" 扰动检测：{componentName} 扰动后有分量测量值无变化，尝试更大扰动");
+                Log.Trace($" 扰动检测：{componentName} 扰动后有分量测量值无变化，尝试更大扰动");
                 // 增大扰动并重新尝试当前分量
                 _jacobianDelta = Math.Min(_jacobianDelta * 4, _maxJacobianDelta);
-                Console.WriteLine($"   增大扰动到: {_jacobianDelta}");
+                Log.Trace($"   增大扰动到: {_jacobianDelta}");
                 // 注意：这里不增加 _jacobianPerturbationIndex，保持当前分量
                 return PerformJacobianPerturbation(bundle, componentIndex);
             }
@@ -604,13 +604,13 @@ namespace GammaDebug.Algorithm
         private IterFdRst CompleteGaussNewtonStep(GammaBundle bundle, double[] currentRgb, double[] currentXylv)
         {
             // 简洁记录雅可比矩阵
-            Log.Trace($"雅可比矩阵: [{_jacobianMatrix[0, 0]:F4},{_jacobianMatrix[0, 1]:F4},{_jacobianMatrix[0, 2]:F4}] [{_jacobianMatrix[1, 0]:F4},{_jacobianMatrix[1, 1]:F4},{_jacobianMatrix[1, 2]:F4}] [{_jacobianMatrix[2, 0]:F4},{_jacobianMatrix[2, 1]:F4},{_jacobianMatrix[2, 2]:F4}]");
+            Log.Trace($"雅可比矩阵: [{_jacobianMatrix[0, 0]:F7},{_jacobianMatrix[0, 1]:F7},{_jacobianMatrix[0, 2]:F7}] [{_jacobianMatrix[1, 0]:F7},{_jacobianMatrix[1, 1]:F7},{_jacobianMatrix[1, 2]:F7}] [{_jacobianMatrix[2, 0]:F7},{_jacobianMatrix[2, 1]:F7},{_jacobianMatrix[2, 2]:F7}]");
             
             Console.WriteLine($" 雅可比矩阵计算完成");
             Console.WriteLine($"雅可比矩阵:");
             for (int i = 0; i < 3; i++)
             {
-                Console.WriteLine($"  [{_jacobianMatrix[i, 0]:F6}, {_jacobianMatrix[i, 1]:F6}, {_jacobianMatrix[i, 2]:F6}]");
+                Console.WriteLine($"  [{_jacobianMatrix[i, 0]:F7}, {_jacobianMatrix[i, 1]:F7}, {_jacobianMatrix[i, 2]:F7}]");
             }
             
             // 计算误差 - 使用扰动前的基准值
