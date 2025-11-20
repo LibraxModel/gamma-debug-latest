@@ -59,6 +59,12 @@ namespace GammaDebug.Algorithm
             {
                 throw new InvalidOperationException("当前绑点已经退出调试流程，请重新初始化");
             }
+            
+            // 保存当前RGB值（用于本次测量的RGB），因为DoIterate会修改bundle.GrayInfo
+            int currentR = _bundle.GrayInfo.R;
+            int currentG = _bundle.GrayInfo.G;
+            int currentB = _bundle.GrayInfo.B;
+            
             var r = _iter.DoIterate(_bundle, lv, x, y);
             if (r.RstType == IterRstType_enum.Finished)
             {
@@ -80,7 +86,21 @@ namespace GammaDebug.Algorithm
                 }
                 Log.Trace($"*--------{_bundle.Gray}灰阶调试完成，迭代{_iter.GetIterCount()}次--------*");
             }
-            Log.Trace($"[当前测量xyLv[{x:F3},{y:F3},{lv:F1}]，结果值[{r.GrayInfo.R},{r.GrayInfo.G},{r.GrayInfo.B}]" + "\n");
+            
+            // 获取目标xyLv值
+            double[] targetXylv = _iter.GetTarget();
+            string targetStr;
+            if (targetXylv != null && targetXylv.Length == 3)
+            {
+                targetStr = $"[{targetXylv[0]:F3},{targetXylv[1]:F3},{targetXylv[2]:F1}]";
+            }
+            else
+            {
+                targetStr = "[未设置]";
+            }
+            
+            // 使用保存的当前RGB值（用于本次测量的RGB），而不是r.GrayInfo（下一轮的RGB）
+            Log.Trace($"本轮RGB[{currentR},{currentG},{currentB}]，当前测量xyLv[{x:F3},{y:F3},{lv:F1}]，目标xyLv{targetStr}\n");
 
             return r;
             //_iterCount++;

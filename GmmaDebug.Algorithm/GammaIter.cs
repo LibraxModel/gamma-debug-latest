@@ -100,11 +100,11 @@ namespace GammaDebug.Algorithm
             double scaleFactor = (_config.MaxRGB + 1.0) / 1024.0;
             
             // 根据比例因子调整参数
-            _maxStepSize = 40.0 * scaleFactor;
-            _firstStepMaxSize = 1000.0 * scaleFactor / 2;
+            _maxStepSize = 40.0 ;
+            _firstStepMaxSize = 1000.0 ;
             _minJacobianDelta = 1.0 ;
-            _maxJacobianDelta = 40.0 * scaleFactor ;
-            _lowLvStep = new double[] { 20.0 * scaleFactor, 20.0 * scaleFactor, 20.0 * scaleFactor };
+            _maxJacobianDelta = 40.0  ;
+            _lowLvStep = new double[] { 20.0,20.0, 20.0};
             
             // 初始化缓存
             _experimentCache = new Dictionary<string, (double[], double)>();
